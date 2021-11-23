@@ -70,29 +70,41 @@ public class Server {
     private synchronized boolean send(String message){
         String time = date.format(new Date());
         boolean privateMsg = false;
-        //if private
-        String[] recipient = message.split(" ",3);
+        List<String> receivers = new ArrayList<>();
+
+        String[] recipient = message.split(" ");
 
         if(recipient[1].charAt(0) == '@') privateMsg = true;
 
+
+
+
         if(privateMsg){
-
-            String checkUser = recipient[1].substring(1);
-
-            String msg = time + " " + recipient[1] + "\n";
-
-            boolean found = false;
-            for(HandleClient user: clientsList){
-               if(checkUser.equals(user.getUsername())) {
-                    if(!user.writeMsg(msg)) {
-                        clientsList.remove(user);
-                        display("Client " + user.username + " is disconnected  and removed from the chat.");
-                    }
-                    // username found and delivered the message
-                    found=true;
-                    break;
+            String msg = "";
+            for(int i=0;i< recipient.length;i++){
+                if(recipient[i].charAt(0) == '@'){
+                    receivers.add(recipient[i].substring(1));
+                }else {
+                    msg = time + " " + recipient[i] + "\n";
                 }
             }
+
+
+            boolean found = false;
+            for(String checkUser: receivers){
+                for(HandleClient user: clientsList){
+                    if(checkUser.equals(user.getUsername())) {
+                        if(!user.writeMsg(msg)) {
+                            clientsList.remove(user);
+                            display("Client " + user.username + " is disconnected  and removed from the chat.");
+                        }
+
+                        found=true;
+                        break;
+                    }
+                }
+            }
+
 
             if(!found)
             {
@@ -230,17 +242,15 @@ public class Server {
         }
 
         private boolean writeMsg(String msg) {
-            // if Client is still connected send the message to it
+
             if(!socket.isConnected()) {
                 close();
                 return false;
             }
-            // write the message to the stream
+
             try {
                 out.writeObject(msg);
-            }
-            // if an error occurs, do not abort just inform the user
-            catch(IOException e) {
+            } catch(IOException e) {
                 display("~~~~ Error sending message to " + username + " ~~~~");
                 display(e.toString());
             }
@@ -250,9 +260,7 @@ public class Server {
 
     public static void main(String[] args) {
         int portNumber = 6000;
-
-        // create a server object and start it
-        Server server = new Server(portNumber);
+        new Server(portNumber);
 
     }
 }

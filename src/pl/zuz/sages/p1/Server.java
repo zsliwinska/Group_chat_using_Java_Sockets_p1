@@ -1,7 +1,13 @@
 package pl.zuz.sages.p1;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.*;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -67,7 +73,7 @@ public class Server {
 
 
 
-    private synchronized boolean send(String message){
+    private synchronized boolean send(String message, String username){
         String time = date.format(new Date());
         boolean privateMsg = false;
         List<String> receivers = new ArrayList<>();
@@ -85,7 +91,7 @@ public class Server {
                 if(recipient[i].charAt(0) == '@'){
                     receivers.add(recipient[i].substring(1));
                 }else {
-                    msg = time + " " + recipient[i] + "\n";
+                    msg = time + " "+username+" : " + recipient[i] + "\n";
                 }
             }
 
@@ -93,7 +99,7 @@ public class Server {
             boolean found = false;
             for(String checkUser: receivers){
                 for(HandleClient user: clientsList){
-                    if(checkUser.equals(user.getUsername())) {
+                    if(checkUser.contains(user.getUsername())) {
                         if(!user.writeMsg(msg)) {
                             clientsList.remove(user);
                             display("Client " + user.username + " is disconnected  and removed from the chat.");
@@ -144,7 +150,7 @@ public class Server {
                 break;
             }
         }
-        send("~~~~ " + disconnectedClient + " has left the chat room. ~~~~" );
+        send("~~~~ " + disconnectedClient + " has left the chat room. ~~~~", "");
     }
 
 
@@ -153,11 +159,12 @@ public class Server {
 
         Socket socket;
         ObjectInputStream in;
-        ObjectOutputStream out;
+        ObjectOutputStream out, fileStr;
         int id;
-        String username;
+        String username, path;
         MessageType msg;
         String date;
+
 
         HandleClient(Socket socket) {
             this.socket = socket;
@@ -168,16 +175,13 @@ public class Server {
                 in  = new ObjectInputStream(socket.getInputStream());
 
                 username = (String) in.readObject();
-                send("~~~~ " + username + " has joined the chat room. ~~~~");
+                path = (String) in.readObject();
+                send("~~~~ " + username + " has joined the chat room. ~~~~",username);
 
             } catch (IOException | ClassNotFoundException e) {
                 e.printStackTrace();
             }
-
             date = new Date() + "\n";
-
-
-
         }
 
         public String getUsername() {
@@ -204,7 +208,7 @@ public class Server {
                 switch(msg.getMessage_type()) {
 
                     case MessageType.message:
-                        boolean confirmation =  send(username + ": " + message);
+                        boolean confirmation =  send(username + ": " + message, username);
                         if(!confirmation){
                             String msg = "~~~~ User no exists. ~~~~";
                             writeMsg(msg);
@@ -222,6 +226,23 @@ public class Server {
                             writeMsg((i+1) + ") " + ct.username + " since " + ct.date);
                         }
                         break;
+
+                    case MessageType.file:
+//                        System.out.println("DONE");
+//                        getAndSendFile();
+                        String choice = "";
+                        try {
+                            choice = (String) in.readObject();
+                        } catch (IOException | ClassNotFoundException e) {
+                            e.printStackTrace();
+                        }
+                        if(choice.equals("FILE")){
+                            SendFile();
+                        }else{
+                            SendImg();
+                        }
+                        break;
+
                 }
 
             }
@@ -229,6 +250,111 @@ public class Server {
             remove(id);
             close();
 
+        }
+
+        private void SendImg(){
+
+            try{
+                String filePath = "", users = "", fileName ="",formatName ="";
+                try {
+                    users = (String) in.readObject();
+                    filePath = (String) in.readObject();
+                    fileName = (String) in.readObject();
+                    formatName = (String) in.readObject();
+                } catch (IOException | ClassNotFoundException e) {
+                    e.printStackTrace();
+                }
+
+                List<String> receivers = splitUsers(users);
+
+                System.out.println("filePath + formantName "+filePath+fileName);
+                String sourcePath = filePath+fileName;
+                Path source = Paths.get(sourcePath);
+                String path="";
+                for(HandleClient client : clientsList) {
+                    if (receivers.contains(client.username)) {
+                        path = client.path+fileName;
+                        Path target = Paths.get(path);
+
+                        BufferedImage bi = ImageIO.read(source.toFile());
+
+                        // convert BufferedImage to byte[]
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        ImageIO.write(bi, formatName, baos);
+                        byte[] bytes = baos.toByteArray();
+
+                        // convert byte[] back to a BufferedImage
+                        InputStream is = new ByteArrayInputStream(bytes);
+                        BufferedImage newBi = ImageIO.read(is);
+                        // save it
+                        ImageIO.write(newBi, formatName, target.toFile());
+
+                        client.writeMsg("Received image from "+username);
+                    }
+                }
+
+            }catch (IOException e){
+                e.printStackTrace();
+            }
+
+
+
+        }
+
+        private List<String> splitUsers(String users){
+            List<String> receivers = new ArrayList<>();
+            String[] recipient = users.split(" ");
+
+            for(int i=0;i< recipient.length;i++){
+                if(recipient[i].charAt(0) == '@'){
+                    receivers.add(recipient[i].substring(1));
+                }
+            }
+            return receivers;
+        }
+
+        private void SendFile(){
+
+            try {
+                String filePath = "", users = "", fileName="";
+                try {
+                    users = (String) in.readObject();
+                    filePath = (String) in.readObject();
+                    fileName = (String) in.readObject();
+                } catch (IOException | ClassNotFoundException e) {
+                    e.printStackTrace();
+                }
+
+                List<String> receivers = splitUsers(users);
+                String source = filePath+fileName;
+                FileInputStream fileStream = new FileInputStream(source);
+//                byte[] b = fileStream.readAllBytes() ;
+//                FileMessage f = new FileMessage(b);
+
+//                byte[] buffer = new byte[fileStream.available()];
+//                fileStream.read(buffer);
+
+
+
+                byte[] content = Files.readAllBytes(Paths.get(source));
+                String path = "";
+                for(HandleClient client : clientsList) {
+                    if (receivers.contains(client.username)) {
+                        path = client.path+fileName;
+                        FileOutputStream fr = new FileOutputStream(path);
+                        fileStr = new ObjectOutputStream(fr);
+                        fileStr.writeObject(content);
+                        client.writeMsg("Received file from "+username);
+                    }
+                }
+
+                display("File send succesfully");
+
+
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
 
         private void close() {

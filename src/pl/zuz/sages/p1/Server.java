@@ -1,10 +1,11 @@
 package pl.zuz.sages.p1;
 
+
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.*;
-import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -20,6 +21,8 @@ public class Server {
     private SimpleDateFormat date = new SimpleDateFormat("HH:mm");
     private boolean active;
     Socket socket;
+    String chatHistory = "chatMessages.txt";
+
 
 
     public Server(int port){
@@ -29,7 +32,7 @@ public class Server {
         try {
             ServerSocket serverSocket = new ServerSocket(port);
             while (active){
-                display("Waiting for clients: ");
+                System.out.println("Waiting for clients: ");
 
                 socket = serverSocket.accept();
 
@@ -59,21 +62,32 @@ public class Server {
 
         } catch (IOException e) {
             display(date.format(new Date()) + " Exception on new ServerSocket: " + e + "\n");
-
         }
 
 
 
     }
 
+    public static void appendToFile(String file, String data) {
+        try {
+            FileOutputStream fout = new FileOutputStream(file, true);
+            OutputStreamWriter outwrite = new OutputStreamWriter(fout, StandardCharsets.UTF_8);
+            outwrite.write(data+"\n");
+            outwrite.close();
+        } catch (IOException e) {
+            throw new RuntimeException("Error writing to file: "+file+" "+e.getMessage());
+        }
+    }
+
     private void display(String msg) {
         String time = date.format(new Date()) + " " + msg;
         System.out.println(time);
+        appendToFile(chatHistory,msg);
     }
 
 
 
-    private synchronized boolean send(String message, String username){
+    private synchronized boolean send(String message){
         String time = date.format(new Date());
         boolean privateMsg = false;
         List<String> receivers = new ArrayList<>();
@@ -83,28 +97,28 @@ public class Server {
         if(recipient[1].charAt(0) == '@') privateMsg = true;
 
 
-
-
         if(privateMsg){
-            String msg = "";
+            String msg, context = "";
             for(int i=0;i< recipient.length;i++){
                 if(recipient[i].charAt(0) == '@'){
                     receivers.add(recipient[i].substring(1));
                 }else {
-                    msg = time + " "+username+" : " + recipient[i] + "\n";
+
+                    context += recipient[i]+" ";
+
                 }
             }
-
+            msg = "[PRIVATE] "+ time + " "+ context ;
 
             boolean found = false;
             for(String checkUser: receivers){
                 for(HandleClient user: clientsList){
                     if(checkUser.contains(user.getUsername())) {
-                        if(!user.writeMsg(msg)) {
+                        if(!user.writeMsg(msg+ "\n")) {
                             clientsList.remove(user);
                             display("Client " + user.username + " is disconnected  and removed from the chat.");
                         }
-
+                        display(msg+"[TO "+user.username+"]"+ "\n");
                         found=true;
                         break;
                     }
@@ -112,10 +126,8 @@ public class Server {
             }
 
 
-            if(!found)
-            {
-                return false;
-            }
+            if(!found) return false;
+
 
 
         }else{
@@ -131,6 +143,7 @@ public class Server {
                     display("Client " + ct.username + " is disconnected and removed from the chat.");
                 }
             }
+            appendToFile(chatHistory,msg);
 
         }
         return true;
@@ -150,7 +163,7 @@ public class Server {
                 break;
             }
         }
-        send("~~~~ " + disconnectedClient + " has left the chat room. ~~~~", "");
+        send("~~~~ " + disconnectedClient + " has left the chat room. ~~~~");
     }
 
 
@@ -176,7 +189,7 @@ public class Server {
 
                 username = (String) in.readObject();
                 path = (String) in.readObject();
-                send("~~~~ " + username + " has joined the chat room. ~~~~",username);
+                send("~~~~ " + username + " has joined the chat room. ~~~~");
 
             } catch (IOException | ClassNotFoundException e) {
                 e.printStackTrace();
@@ -188,9 +201,6 @@ public class Server {
             return username;
         }
 
-        public void setUsername(String username) {
-            this.username = username;
-        }
 
 
         public void run() {
@@ -199,8 +209,11 @@ public class Server {
             while(active){
                 try {
                     msg = (MessageType) in.readObject();
-                } catch (IOException | ClassNotFoundException e) {
-                    e.printStackTrace();
+                } catch (IOException e  ) {
+                    display(username + " Exception reading Streams: " + e);
+                    break;
+                }catch(ClassNotFoundException e2){
+                    break;
                 }
 
                 String message = msg.getMessage_context();
@@ -208,7 +221,7 @@ public class Server {
                 switch(msg.getMessage_type()) {
 
                     case MessageType.message:
-                        boolean confirmation =  send(username + ": " + message, username);
+                        boolean confirmation =  send(username + ": " + message);
                         if(!confirmation){
                             String msg = "~~~~ User no exists. ~~~~";
                             writeMsg(msg);
@@ -228,8 +241,6 @@ public class Server {
                         break;
 
                     case MessageType.file:
-//                        System.out.println("DONE");
-//                        getAndSendFile();
                         String choice = "";
                         try {
                             choice = (String) in.readObject();
@@ -267,10 +278,10 @@ public class Server {
 
                 List<String> receivers = splitUsers(users);
 
-                System.out.println("filePath + formantName "+filePath+fileName);
+
                 String sourcePath = filePath+fileName;
                 Path source = Paths.get(sourcePath);
-                String path="";
+                String path;
                 for(HandleClient client : clientsList) {
                     if (receivers.contains(client.username)) {
                         path = client.path+fileName;
@@ -289,12 +300,14 @@ public class Server {
                         // save it
                         ImageIO.write(newBi, formatName, target.toFile());
 
+                        display(username+" send an image to "+client.username );
                         client.writeMsg("Received image from "+username);
                     }
                 }
 
             }catch (IOException e){
-                e.printStackTrace();
+                display("Something went wrong: "+e);
+                writeMsg("Something went wrong. Try again!");
             }
 
 
@@ -305,9 +318,9 @@ public class Server {
             List<String> receivers = new ArrayList<>();
             String[] recipient = users.split(" ");
 
-            for(int i=0;i< recipient.length;i++){
-                if(recipient[i].charAt(0) == '@'){
-                    receivers.add(recipient[i].substring(1));
+            for (String s : recipient) {
+                if (s.charAt(0) == '@') {
+                    receivers.add(s.substring(1));
                 }
             }
             return receivers;
@@ -327,17 +340,10 @@ public class Server {
 
                 List<String> receivers = splitUsers(users);
                 String source = filePath+fileName;
-                FileInputStream fileStream = new FileInputStream(source);
-//                byte[] b = fileStream.readAllBytes() ;
-//                FileMessage f = new FileMessage(b);
-
-//                byte[] buffer = new byte[fileStream.available()];
-//                fileStream.read(buffer);
-
 
 
                 byte[] content = Files.readAllBytes(Paths.get(source));
-                String path = "";
+                String path;
                 for(HandleClient client : clientsList) {
                     if (receivers.contains(client.username)) {
                         path = client.path+fileName;
@@ -345,15 +351,12 @@ public class Server {
                         fileStr = new ObjectOutputStream(fr);
                         fileStr.writeObject(content);
                         client.writeMsg("Received file from "+username);
+                        display(username+" send file to "+client.username );
                     }
                 }
-
-                display("File send succesfully");
-
-
-
             } catch (IOException e) {
-                e.printStackTrace();
+                display("Something went wrong: "+e);
+                writeMsg("Something went wrong. Try again!");
             }
         }
 
@@ -376,6 +379,7 @@ public class Server {
 
             try {
                 out.writeObject(msg);
+
             } catch(IOException e) {
                 display("~~~~ Error sending message to " + username + " ~~~~");
                 display(e.toString());

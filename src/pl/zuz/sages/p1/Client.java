@@ -7,10 +7,9 @@ import java.util.*;
 public class Client {
 
     private ObjectInputStream in;
-    private ObjectOutputStream out, fileStr;
+    private ObjectOutputStream out;
     private Socket socket;
-    private FileInputStream fis;
-    private FileOutputStream fos;
+
 
     private String server, username, path;
     private int port;
@@ -41,7 +40,7 @@ public class Client {
         }
 
         new ListenFromServer().start();
-//        new fileListener().start();
+
 
         try {
             out.writeObject(username);
@@ -59,7 +58,7 @@ public class Client {
     }
 
 
-    void sendMsgToServer(MessageType msg) {
+    private void sendMsgToServer(MessageType msg) {
         try {
             out.writeObject(msg);
         }
@@ -68,7 +67,7 @@ public class Client {
         }
     }
 
-    void sendFile(){
+    private void sendFile(){
         try{
             System.out.println("Enter receivers usernames: |Example: @username @username2");
             String users = scan.nextLine();
@@ -119,15 +118,6 @@ public class Client {
 
     }
 
-    public String getUsername() {
-        return username;
-    }
-
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-
     class ListenFromServer extends Thread {
 
         public void run() {
@@ -153,8 +143,7 @@ public class Client {
         String serverAddress = "localhost";
         String username,path;
         Scanner scan = new Scanner(System.in);
-        File file;
-        FileInputStream fr;
+
 
         System.out.println("Enter the username: ");
         username = scan.nextLine();
@@ -166,8 +155,8 @@ public class Client {
 
         System.out.println("\nWelcome to the chatroom!");
 
-        System.out.println("Simply type the message on the group chat or begin with @username to send private message " +
-                "\nType 'USERS' to check who is online \nType 'LOGOUT' to logout ");
+        System.out.println("Simply type the message on the group chat \nType @username to send private message " +
+                "\nType 'USERS' to check who is online \nType 'LOGOUT' to logout \nType 'FILE' to send image or file");
 
 
         while(true) {
@@ -186,7 +175,7 @@ public class Client {
                 client.sendMsgToServer(new MessageType(MessageType.file, ""));
                 System.out.println("Type IMG to send an image or FILE to send something else");
                 String choice = scan.nextLine();
-                switch (choice){
+                switch (choice.toUpperCase()){
                     case "IMG" :
                         client.sendImg();
                         break;
